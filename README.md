@@ -1,10 +1,10 @@
 # Multi-UAV Adaptive Path Planning with Deep Reinforcement Learning
 
-Final Project — IBPI, Yuan Ze University
+Final Project
 
 ## Team
-- Tran Nam Anh (1113543)
-- Tran Phan Anh (1113542)
+- NOLAN (1113543)
+- Ferran (1113542)
 - Travis (1113545)
 
 ## Files
