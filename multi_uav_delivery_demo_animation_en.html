@@ -1,0 +1,80 @@
+<style>
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.dwrap{padding:1rem 0}
+.dlg{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:13px;color:var(--color-text-secondary)}
+.ddot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+</style>
+<div class="dwrap">
+<h2 class="sr-only">Animation: three UAVs take off, use ray-casting sensors to detect obstacles, perform duck, climb and go-around maneuvers, and land at three delivery points.</h2>
+<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+<button id="replay" aria-label="Replay"><i class="ti ti-player-play" aria-hidden="true"></i> Replay</button>
+<span id="clock" style="font-size:13px;color:var(--color-text-secondary)"></span>
+</div>
+<canvas id="cv" width="680" height="500" style="width:100%;height:auto;display:block"></canvas>
+<div class="dlg">
+<span><span class="ddot" style="background:#378ADD"></span>Drone 1 — duck under barrier</span>
+<span><span class="ddot" style="background:#1D9E75"></span>Drone 2 — climb + sidestep</span>
+<span><span class="ddot" style="background:#5CB85C"></span>Drone 3 — go around pillar</span>
+</div>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('cv'),x=cv.getContext('2d');
+var probe=document.createElement('div');document.body.appendChild(probe);
+var cs=getComputedStyle(probe);
+function v(n,f){var s=cs.getPropertyValue(n).trim();return s||f;}
+var COL={floor:v('--color-background-secondary','#f1efe8'),txt:v('--color-text-secondary','#5f5e5a'),txt2:v('--color-text-tertiary','#888780')};
+document.body.removeChild(probe);
+var W=680,H=500;
+function mx(wx){return 340+wx*100;}
+function my(wy){return 250-wy*95;}
+var drones=[
+ {c:'#378ADD',lane:-2,p:[[-2,-2,0.05],[-2,-2,1],[-2,-0.6,1],[-2,-0.15,0.45],[-2,0.15,0.45],[-2,0.6,1],[-2,1.8,1],[-2,2,0.05]]},
+ {c:'#1D9E75',lane:0,p:[[0,-2,0.05],[0,-2,1],[0,-1.1,1],[0,-0.6,1.65],[0,-0.1,1],[-0.65,0.55,1],[0,1.2,1],[0,1.8,1],[0,2,0.05]]},
+ {c:'#5CB85C',lane:2,p:[[2,-2,0.05],[2,-2,1],[2,-0.6,1],[1.35,0,1],[2,0.6,1],[2,1.8,1],[2,2,0.05]]}
+];
+var obs=[
+ {x:-2,y:0,hw:0.45,hh:0.42,c:'#7F77DD',l:'high barrier'},
+ {x:0,y:-0.6,hw:0.5,hh:0.42,c:'#EF9F27',l:'low wall'},
+ {x:0,y:0.55,hw:0.38,hh:0.38,c:'#D85A30',l:'tall pillar'},
+ {x:2,y:0,hw:0.38,hh:0.38,c:'#D85A30',l:'tall pillar'}
+];
+function d3(a,b){var dx=a[0]-b[0],dy=a[1]-b[1],dz=a[2]-b[2];return Math.sqrt(dx*dx+dy*dy+dz*dz);}
+drones.forEach(function(d){var cum=[0];for(var i=1;i<d.p.length;i++)cum.push(cum[i-1]+d3(d.p[i-1],d.p[i]));d.cum=cum;d.total=cum[cum.length-1];d.trail=[];});
+var SPEED=1.15;
+var maxDur=0;drones.forEach(function(d){maxDur=Math.max(maxDur,d.total/SPEED);});
+var loopDur=maxDur+1.6;
+function posAt(d,s){if(s<=0)return d.p[0];if(s>=d.total)return d.p[d.p.length-1];var i=1;while(i<d.cum.length&&d.cum[i]<s)i++;var t=(s-d.cum[i-1])/(d.cum[i]-d.cum[i-1]||1);var a=d.p[i-1],b=d.p[i];return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+function inObs(px,py,pad){for(var i=0;i<obs.length;i++){var o=obs[i];if(Math.abs(px-o.x)<o.hw+pad&&Math.abs(py-o.y)<o.hh+pad)return true;}return false;}
+function label(d,p,landed){if(landed)return 'delivered';if(p[1]<-1.55)return 'taking off';if(p[2]>1.2)return 'avoid: climb';if(p[2]<0.8)return 'avoid: duck';if(Math.abs(p[0]-d.lane)>0.2)return 'avoid: sidestep';if(p[1]>1.5)return 'delivering';return 'cruising';}
+function roundRect(c,rx,ry,w,h,r){c.beginPath();c.moveTo(rx+r,ry);c.arcTo(rx+w,ry,rx+w,ry+h,r);c.arcTo(rx+w,ry+h,rx,ry+h,r);c.arcTo(rx,ry+h,rx,ry,r);c.arcTo(rx,ry,rx+w,ry,r);c.closePath();}
+var start=performance.now();
+function frame(now){
+ var el=(now-start)/1000;
+ if(el>loopDur){start=now;el=0;drones.forEach(function(d){d.trail=[];});}
+ x.clearRect(0,0,W,H);
+ x.fillStyle=COL.floor;roundRect(x,40,40,600,420,12);x.fill();
+ x.strokeStyle='rgba(128,128,128,0.18)';x.lineWidth=1;
+ for(var gx=-3;gx<=3;gx++){x.beginPath();x.moveTo(mx(gx),40);x.lineTo(mx(gx),460);x.stroke();}
+ for(var gy=-2;gy<=2;gy++){x.beginPath();x.moveTo(40,my(gy));x.lineTo(640,my(gy));x.stroke();}
+ x.font='12px var(--font-sans, sans-serif)';x.textAlign='center';
+ x.fillStyle=COL.txt2;x.fillText('start',mx(0),my(-2)+34);x.fillText('delivery points',mx(0),my(2)-26);
+ for(var i=0;i<obs.length;i++){var o=obs[i];x.fillStyle=o.c;x.globalAlpha=0.85;roundRect(x,mx(o.x-o.hw),my(o.y+o.hh),(o.hw*2)*100,(o.hh*2)*95,6);x.fill();x.globalAlpha=1;x.fillStyle=COL.txt;x.fillText(o.l,mx(o.x),my(o.y-o.hh)+16);}
+ for(var di=0;di<drones.length;di++){var d=drones[di];var pg=[d.lane,2,0.05];x.strokeStyle=d.c;x.lineWidth=2;x.beginPath();x.arc(mx(pg[0]),my(pg[1]),11,0,7);x.stroke();x.fillStyle=d.c;x.fillRect(mx(pg[0])-4,my(pg[1])-4,8,8);}
+ for(var di2=0;di2<drones.length;di2++){
+  var d=drones[di2];var s=el*SPEED;var landed=s>=d.total;var p=posAt(d,Math.min(s,d.total));
+  var sx=mx(p[0]),sy=my(p[1]);
+  if(!landed&&p[1]>-1.95){d.trail.push([sx,sy]);if(d.trail.length>500)d.trail.shift();}
+  if(d.trail.length>1){x.strokeStyle=d.c;x.globalAlpha=0.5;x.lineWidth=2;x.beginPath();x.moveTo(d.trail[0][0],d.trail[0][1]);for(var k=1;k<d.trail.length;k++)x.lineTo(d.trail[k][0],d.trail[k][1]);x.stroke();x.globalAlpha=1;}
+  if(!landed&&p[1]>-1.9){for(var r=0;r<12;r++){var a=r/12*Math.PI*2;var ex=p[0]+Math.cos(a)*0.62,ey=p[1]+Math.sin(a)*0.62;var hit=inObs(p[0]+Math.cos(a)*0.4,p[1]+Math.sin(a)*0.4,0.08)||inObs(ex,ey,0.08);x.strokeStyle=hit?'#E24B4A':'#1D9E75';x.globalAlpha=hit?0.9:0.4;x.lineWidth=hit?2:1;x.beginPath();x.moveTo(sx,sy);x.lineTo(mx(ex),my(ey));x.stroke();}x.globalAlpha=1;}
+  var rad=6+p[2]*3;x.fillStyle=d.c;x.beginPath();x.arc(sx,sy,rad*0.55,0,7);x.fill();for(var rr=0;rr<4;rr++){var ra=Math.PI/4+rr*Math.PI/2;x.beginPath();x.arc(sx+Math.cos(ra)*rad,sy+Math.sin(ra)*rad,2.6,0,7);x.fill();}
+  x.fillStyle=d.c;x.font='12px var(--font-sans, sans-serif)';x.textAlign='center';x.fillText(label(d,p,landed),sx,sy-rad-8);
+  x.fillStyle=COL.txt2;x.font='10px var(--font-sans, sans-serif)';x.fillText('z='+p[2].toFixed(1)+'m',sx,sy+rad+13);
+ }
+ var ck=document.getElementById('clock');if(ck)ck.textContent='t = '+Math.min(el,maxDur).toFixed(1)+' s';
+ requestAnimationFrame(frame);
+}
+document.getElementById('replay').onclick=function(){start=performance.now();drones.forEach(function(d){d.trail=[];});};
+requestAnimationFrame(frame);
+})();
+</script>
